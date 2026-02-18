@@ -90,6 +90,31 @@ module UserInterface
     ]
   end
 
+  def action_buttons
+    output = []
+
+    # JUMP button
+    # Border
+    output << { x: 1080, y: 40, w: 80, h: 50, path: :solid, r: 0, g: 0, b: 0, a: 255 }
+    # Green fill
+    output << { x: 1082, y: 42, w: 76, h: 46, path: :solid, r: 0, g: 180, b: 0, a: 255 }
+
+    # FIRE button
+    # Border
+    output << { x: 1180, y: 40, w: 80, h: 50, path: :solid, r: 0, g: 0, b: 0, a: 255 }
+    # Red fill
+    output << { x: 1182, y: 42, w: 76, h: 46, path: :solid, r: 200, g: 0, b: 0, a: 255 }
+
+    output
+  end
+
+  def action_button_labels
+    [
+      { x: 1120, y: 75, text: "JUMP", size_enum: 0, alignment_enum: 1, r: 255, g: 255, b: 255, a: 255 },
+      { x: 1220, y: 75, text: "FIRE", size_enum: 0, alignment_enum: 1, r: 255, g: 255, b: 255, a: 255 }
+    ]
+  end
+
   def join_code_display(code)
     [
       {

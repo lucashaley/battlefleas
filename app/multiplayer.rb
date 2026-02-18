@@ -293,33 +293,11 @@ module Multiplayer
 
     case turn_data[:action]
     when :jump
-      x_offset = Math.cos(opponent_flea.aim.angle * Math::PI / 180)
-      y_offset = Math.sin(opponent_flea.aim.angle * Math::PI / 180)
-      relative_power = opponent_flea.aim.power * 0.1
-      opponent_flea.speed.x = x_offset * relative_power
-      opponent_flea.speed.y = y_offset * relative_power
-      opponent_flea.is_grounded = false
-      opponent_flea.grounded_start = nil
-
-      args.state.turn.action = :jump
-      args.state.game.playstate = :review
+      perform_jump(args, opponent_flea)
 
     when :fire
-      aim_x = Math.cos(opponent_flea.aim.angle * Math::PI / 180)
-      aim_y = Math.sin(opponent_flea.aim.angle * Math::PI / 180)
-
-      muzzle_x = (opponent_flea.x + aim_x * 20).round
-      muzzle_y = (opponent_flea.y + aim_y * 20).round + 5
-
       weapon = turn_data[:weapon] || :explosive
-      args.state.game.projectiles << init_projectile(weapon).tap do |b|
-        b.x = muzzle_x
-        b.y = muzzle_y
-        b.speed = { x: aim_x * opponent_flea.aim.power * 0.1, y: aim_y * opponent_flea.aim.power * 0.1 }
-      end
-
-      args.state.turn.action = :fire
-      args.state.game.playstate = :review
+      perform_fire(args, opponent_flea, weapon)
     end
   end
 

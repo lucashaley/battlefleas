@@ -23,6 +23,79 @@ def current_flea(args)
   args.state.game.fleas[args.state.turn.current_index]
 end
 
+def perform_jump(args, flea)
+  x_offset = Math.cos(flea.aim.angle * Math::PI / 180)
+  y_offset = Math.sin(flea.aim.angle * Math::PI / 180)
+  relative_power = flea.aim.power * 0.1
+  flea.speed.x = x_offset * relative_power
+  flea.speed.y = y_offset * relative_power
+  flea.y += 6
+  flea.is_grounded = false
+  flea.grounded_start = nil
+
+  args.state.turn.action = :jump
+  args.state.game.playstate = :review
+end
+
+def perform_fire(args, flea, weapon = nil)
+  weapon ||= flea.weapon
+  aim_x = Math.cos(flea.aim.angle * Math::PI / 180)
+  aim_y = Math.sin(flea.aim.angle * Math::PI / 180)
+
+  muzzle_x = (flea.x + aim_x * 20).round
+  muzzle_y = (flea.y + aim_y * 20).round + 5
+
+  args.state.game.projectiles << init_projectile(weapon).tap do |b|
+    b.x = muzzle_x
+    b.y = muzzle_y
+    b.speed = { x: aim_x * flea.aim.power * 0.1, y: aim_y * flea.aim.power * 0.1 }
+  end
+
+  args.state.turn.action = :fire
+  args.state.game.playstate = :review
+end
+
+def update_camera(args)
+  w = args.state.global.terrain.w
+
+  # Mouse drag — manual pan (cancels any auto-target)
+  if args.inputs.mouse.buttons.left.held
+    args.state.camera.offset_x += args.inputs.mouse.relative_x
+    args.state.camera.target_x = nil
+    return
+  end
+
+  # During review, track the active projectile or jumping flea
+  if args.state.game.playstate == :review
+    active_projectile = args.state.game.projectiles.find { |p| p.active && !p.is_grounded }
+    if active_projectile
+      args.state.camera.target_x = 640 - active_projectile.x
+    elsif args.state.turn.action == :jump
+      flea = current_flea(args)
+      args.state.camera.target_x = 640 - flea.x unless flea.is_grounded
+    end
+  end
+
+  # Smooth lerp toward target
+  return unless args.state.camera.target_x
+
+  delta = args.state.camera.target_x - args.state.camera.offset_x
+  # Shortest path through wrapping world
+  delta -= w while delta > w / 2
+  delta += w while delta < -w / 2
+
+  if delta.abs < 1
+    args.state.camera.offset_x += delta
+    args.state.camera.target_x = nil
+  else
+    args.state.camera.offset_x += delta * 0.08
+  end
+end
+
+def focus_camera_on_flea(args, flea)
+  args.state.camera.target_x = 640 - flea.x
+end
+
 def advance_turn(args)
   num = args.state.game.num_players
   start_index = args.state.turn.current_index
@@ -71,6 +144,7 @@ def setup args
   # Put everything before this, because the state will trigger
   args.state.app.state = :splash
   args.state.game.playstate = :interact
+  focus_camera_on_flea(args, current_flea(args))
 end
 
 def splash args
@@ -333,11 +407,6 @@ def playing args
 
   # INPUT
 
-  # View controls
-  if args.inputs.mouse.buttons.left.held
-    args.state.camera.offset_x += args.inputs.mouse.relative_x
-  end
-
   # Player controls
   if args.state.game.playstate == :interact
     # In multiplayer, skip input when it's not our turn
@@ -357,18 +426,22 @@ def playing args
         flea.speed.y = 0
       end
 
+      # Button click detection
+      jump_rect = { x: 1080, y: 40, w: 80, h: 50 }
+      fire_rect = { x: 1180, y: 40, w: 80, h: 50 }
+
+      if args.inputs.mouse.click
+        if args.inputs.mouse.click.inside_rect?(jump_rect) && flea.is_grounded
+          perform_jump(args, flea)
+        end
+        if args.inputs.mouse.click.inside_rect?(fire_rect)
+          perform_fire(args, flea)
+        end
+      end
+
       # Jump
       if args.inputs.keyboard.key_down.space && flea.is_grounded
-        x_offset = Math.cos(flea.aim.angle * Math::PI / 180)
-        y_offset = Math.sin(flea.aim.angle * Math::PI / 180)
-        relative_power = flea.aim.power * 0.1
-        flea.speed.x = x_offset * relative_power
-        flea.speed.y = y_offset * relative_power
-        flea.is_grounded = false
-        flea.grounded_start = nil
-
-        args.state.turn.action = :jump
-        args.state.game.playstate = :review
+        perform_jump(args, flea)
       end
 
       # Weapon cycling
@@ -385,20 +458,7 @@ def playing args
 
       # Firing
       if args.inputs.keyboard.key_down.enter
-        aim_x = Math.cos(flea.aim.angle * Math::PI / 180)
-        aim_y = Math.sin(flea.aim.angle * Math::PI / 180)
-
-        muzzle_x = (flea.x + aim_x * 20).round
-        muzzle_y = (flea.y + aim_y * 20).round + 5
-
-        args.state.game.projectiles << init_projectile(flea.weapon).tap do |b|
-          b.x = muzzle_x
-          b.y = muzzle_y
-          b.speed = { x: aim_x * flea.aim.power * 0.1, y: aim_y * flea.aim.power * 0.1 }
-        end
-
-        args.state.turn.action = :fire
-        args.state.game.playstate = :review
+        perform_fire(args, flea)
       end
     end
   end
@@ -464,11 +524,13 @@ def playing args
             args.state.mp.mp_state = :idle
             advance_turn(args)
             args.state.game.playstate = :interact
+            focus_camera_on_flea(args, current_flea(args))
           end
         end
       else
         advance_turn(args)
         args.state.game.playstate = :interact
+        focus_camera_on_flea(args, current_flea(args))
       end
     end
   end
@@ -476,6 +538,9 @@ def playing args
   # Aiming calculations (for rendering aim line)
   aim_y = Math.sin(flea.aim.angle * Math::PI / 180)
   aim_x = Math.cos(flea.aim.angle * Math::PI / 180)
+
+  # Update camera (drag, tracking, lerp)
+  update_camera(args)
 
   # Screen position for active flea
   flea.screen_x = (args.state.camera.offset_x + flea.x) % args.state.global.terrain.w
@@ -559,18 +624,6 @@ def playing args
   end
 
   # RENDER SCENE
-  # Camera focus during review: follow projectile if in flight, otherwise follow active flea
-  if args.state.game.playstate == :review
-    active_projectile = args.state.game.projectiles.find { |p| p.active && !p.is_grounded }
-    if active_projectile
-      target_screen_x = active_projectile.screen_x
-    else
-      target_screen_x = flea.screen_x
-    end
-    camera_offset_perc = (target_screen_x - 640) / 640
-    args.state.camera.offset_x -= camera_offset_perc * 10
-  end
-
   args.outputs.sprites << { x: args.state.camera.offset_x % args.state.global.terrain.w,
                             y: 0,
                             w: args.state.global.terrain.w,
@@ -587,6 +640,12 @@ def playing args
 
   # Render weapon indicator
   args.outputs.labels << UserInterface.weapon_indicator(flea)
+
+  # Render action buttons (only during interact)
+  if args.state.game.playstate == :interact
+    args.outputs.sprites << UserInterface.action_buttons
+    args.outputs.labels << UserInterface.action_button_labels
+  end
 
   # Render turn indicator
   args.outputs.labels << UserInterface.turn_indicator(flea, args.state.turn.number)
