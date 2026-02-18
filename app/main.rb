@@ -6,7 +6,12 @@ require 'app/flea'
 require 'app/landscape'
 require 'app/terrain'
 require 'app/multiplayer'
-require 'app/projectile_types'
+require 'app/classes/battle_sprite'
+require 'app/projectile'
+require 'app/projectiles/explosive'
+require 'app/projectiles/repulsor'
+require 'app/projectiles/shotgun'
+require 'app/projectiles/homing'
 
 include Setup
 include Landscape
@@ -15,7 +20,6 @@ include Flea
 include UserInterface
 include Terrain
 include Multiplayer
-include ProjectileTypes
 
 # HELPERS
 
@@ -39,17 +43,9 @@ end
 
 def perform_fire(args, flea, weapon = nil)
   weapon ||= flea.weapon
-  aim_x = Math.cos(flea.aim.angle * Math::PI / 180)
-  aim_y = Math.sin(flea.aim.angle * Math::PI / 180)
-
-  muzzle_x = (flea.x + aim_x * 20).round
-  muzzle_y = (flea.y + aim_y * 20).round + 5
-
-  args.state.game.projectiles << init_projectile(weapon).tap do |b|
-    b.x = muzzle_x
-    b.y = muzzle_y
-    b.speed = { x: aim_x * flea.aim.power * 0.1, y: aim_y * flea.aim.power * 0.1 }
-  end
+  projectile = Projectile.create(weapon)
+  spawned = projectile.spawn(flea)
+  args.state.game.projectiles.concat(spawned)
 
   args.state.turn.action = :fire
   args.state.game.playstate = :review
@@ -446,7 +442,7 @@ def playing args
 
       # Weapon cycling
       if args.inputs.keyboard.key_down.tab
-        weapons = available_weapons
+        weapons = Projectile.available_weapons
         idx = weapons.index(flea.weapon) || 0
         flea.weapon = weapons[(idx + 1) % weapons.length]
       end
@@ -641,6 +637,10 @@ def playing args
   # Render weapon indicator
   args.outputs.labels << UserInterface.weapon_indicator(flea)
 
+  # Render health display for active player
+  args.outputs.sprites << UserInterface.health_display(flea)
+  args.outputs.labels << UserInterface.health_label(flea)
+
   # Render action buttons (only during interact)
   if args.state.game.playstate == :interact
     args.outputs.sprites << UserInterface.action_buttons
@@ -689,6 +689,9 @@ def calc_projectile(p, args)
   segments = args.state.game.terrain_segments
   w = args.state.global.terrain.w
 
+  # Let projectile steer itself (e.g. homing missile)
+  p.track_nearest_flea(args) if p.respond_to?(:track_nearest_flea)
+
   # Apply gravity
   p.speed.y -= 0.1
 
@@ -702,13 +705,11 @@ def calc_projectile(p, args)
   next_x_rounded = next_x.round % w
   next_y = (p.y + p.speed.y)
 
-  # Look up projectile type properties (fleas have no projectile_type — skip all explosion checks)
-  ptype = PROJECTILE_TYPES[p.projectile_type] if p.projectile_type
-  explodes_on_flea = ptype ? ptype[:explodes_on_flea] : false
-  explodes_on_terrain = ptype ? ptype[:explodes_on_terrain] : false
+  # Fleas have no projectile_type — skip all projectile-specific collision checks
+  is_projectile = p.respond_to?(:projectile_type) && p.projectile_type
 
   # Check for flea collision (only for projectiles that explode on flea hit)
-  if explodes_on_flea
+  if is_projectile && p.explodes_on_flea?
     args.state.game.fleas.each_value do |flea|
       next unless flea.alive
       dx = ((next_x - flea.x + 800) % 1600) - 800
@@ -716,7 +717,7 @@ def calc_projectile(p, args)
       dist = Math.sqrt(dx * dx + dy * dy)
       hit_radius = (flea.w || 10) * 0.5 + (p.blast_radius || 20) * 0.5
       if dist < hit_radius
-        projectile_on_impact(args, p, flea.x.round % w, flea.y.round)
+        p.on_impact(args, flea.x.round % w, flea.y.round)
         p.active = false
         return false
       end
@@ -727,15 +728,15 @@ def calc_projectile(p, args)
   hit = terrain_collision_segment(segments, p.x, p.y, next_x, next_y, w)
   if hit
     # Type explodes on terrain — trigger impact and deactivate
-    if explodes_on_terrain
-      projectile_on_impact(args, p, next_x_rounded, hit[:y])
+    if is_projectile && p.explodes_on_terrain?
+      p.on_impact(args, next_x_rounded, hit[:y])
       p.active = false
       return false
     end
 
     # Type does NOT explode on terrain but has an impact effect (e.g. repulsor)
-    if ptype && (ptype[:impulse_radius] || ptype[:on_terrain_impact])
-      projectile_on_impact(args, p, next_x_rounded, hit[:y])
+    if is_projectile && p.has_terrain_impact?
+      p.on_impact(args, next_x_rounded, hit[:y])
       p.active = false
       return false
     end
@@ -887,7 +888,7 @@ def check_pickup_collection(flea, args)
   end
 end
 
-def explode_at(args, cx, cy, radius)
+def explode_at(args, cx, cy, radius, max_damage = 100)
   segments = args.state.game.terrain_segments
   w = args.state.global.terrain.w
 
@@ -905,9 +906,9 @@ def explode_at(args, cx, cy, radius)
     dy = cy - flea.y
     dist = Math.sqrt(dx * dx + dy * dy)
 
-    # Deal damage based on proximity (100 at center, 0 at edge of blast)
+    # Deal damage based on proximity (max_damage at center, 0 at edge of blast)
     if dist < radius
-      damage = ((1 - dist / radius) * 100).round
+      damage = ((1 - dist / radius) * max_damage).round
       flea.health -= damage
       if flea.health <= 0
         flea.health = 0

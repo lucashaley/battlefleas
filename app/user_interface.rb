@@ -36,6 +36,39 @@ module UserInterface
     }
   end
 
+  def health_display(flea)
+    health = flea.health || 0
+    health_pct = health / 100.0
+    bar_r = ((1 - health_pct) * 255).to_i
+    bar_g = (health_pct * 255).to_i
+
+    output = []
+    # Background
+    output << {
+      x: 100, y: 40, w: 160, h: 30,
+      path: :solid, r: 40, g: 40, b: 40, a: 220
+    }
+    # Health bar fill
+    output << {
+      x: 102, y: 42, w: (156 * health_pct).round, h: 26,
+      path: :solid, r: bar_r, g: bar_g, b: 0, a: 255
+    }
+    output
+  end
+
+  def health_label(flea)
+    health = flea.health || 0
+    [
+      {
+        x: 180, y: 62,
+        text: "HP: #{health}",
+        size_enum: 0,
+        alignment_enum: 1,
+        r: 255, g: 255, b: 255, a: 255
+      }
+    ]
+  end
+
   def turn_indicator(flea, turn_number)
     [
       {
@@ -72,7 +105,7 @@ module UserInterface
 
   def weapon_indicator(flea)
     weapon_key = flea.weapon || :explosive
-    type = ProjectileTypes::PROJECTILE_TYPES[weapon_key]
+    type = Projectile.type_info(weapon_key)
     name = type ? type[:name] : weapon_key.to_s
     color = type ? type[:color] : { r: 255, g: 255, b: 255 }
     [
