@@ -35,4 +35,139 @@ module UserInterface
       a: 255
     }
   end
+
+  def turn_indicator(flea, turn_number)
+    [
+      {
+        x: 640,
+        y: 700,
+        text: "#{flea.name} -- Turn #{turn_number}",
+        size_enum: 1,
+        alignment_enum: 1,
+        r: flea.color.r,
+        g: flea.color.g,
+        b: flea.color.b,
+        a: 255
+      }
+    ]
+  end
+
+  def waiting_indicator
+    # Pulsing alpha based on tick count
+    alpha = 128 + (127 * Math.sin(Kernel.tick_count * 0.05)).to_i
+    [
+      {
+        x: 640,
+        y: 400,
+        text: "Waiting for opponent...",
+        size_enum: 2,
+        alignment_enum: 1,
+        r: 255,
+        g: 255,
+        b: 255,
+        a: alpha
+      }
+    ]
+  end
+
+  def weapon_indicator(flea)
+    weapon_key = flea.weapon || :explosive
+    type = ProjectileTypes::PROJECTILE_TYPES[weapon_key]
+    name = type ? type[:name] : weapon_key.to_s
+    color = type ? type[:color] : { r: 255, g: 255, b: 255 }
+    [
+      {
+        x: 60,
+        y: 460,
+        text: name,
+        size_enum: -1,
+        alignment_enum: 1,
+        r: color[:r],
+        g: color[:g],
+        b: color[:b],
+        a: 255
+      }
+    ]
+  end
+
+  def join_code_display(code)
+    [
+      {
+        x: 640,
+        y: 500,
+        text: "Join Code: #{code}",
+        size_enum: 3,
+        alignment_enum: 1,
+        r: 255,
+        g: 255,
+        b: 0,
+        a: 255
+      }
+    ]
+  end
+
+  def mp_error_display(message)
+    [
+      {
+        x: 640,
+        y: 360,
+        text: message,
+        size_enum: 1,
+        alignment_enum: 1,
+        r: 255,
+        g: 64,
+        b: 64,
+        a: 255
+      },
+      {
+        x: 640,
+        y: 330,
+        text: "Press ESC to return to menu",
+        size_enum: 0,
+        alignment_enum: 1,
+        r: 200,
+        g: 200,
+        b: 200,
+        a: 255
+      }
+    ]
+  end
+
+  def join_code_input_display(input_text)
+    [
+      {
+        x: 640,
+        y: 420,
+        text: "Enter 6-digit code:",
+        size_enum: 1,
+        alignment_enum: 1,
+        r: 255,
+        g: 255,
+        b: 255,
+        a: 255
+      },
+      {
+        x: 640,
+        y: 380,
+        text: input_text + "_",
+        size_enum: 3,
+        alignment_enum: 1,
+        r: 255,
+        g: 255,
+        b: 0,
+        a: 255
+      },
+      {
+        x: 640,
+        y: 340,
+        text: "Press ENTER to join, ESC to cancel",
+        size_enum: 0,
+        alignment_enum: 1,
+        r: 200,
+        g: 200,
+        b: 200,
+        a: 255
+      }
+    ]
+  end
 end
