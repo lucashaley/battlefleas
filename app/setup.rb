@@ -59,12 +59,12 @@ module Setup
         pickup_type: :health,
         x: px,
         y: py + 5,
-        w: 6,
-        h: 6,
+        w: 32,
+        h: 24,
         value: 25,
         active: true,
-        color: { r: 64, g: 255, b: 64 },
-        type: :solid
+        color: { r: 255, g: 255, b: 255 },
+        type: "sprites/health_01.png"
       }
     end
   end

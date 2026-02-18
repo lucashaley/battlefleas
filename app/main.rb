@@ -983,7 +983,7 @@ def check_pickup_collection(flea, args)
     dy = flea.y - pickup.y
     dist = Math.sqrt(dx * dx + dy * dy)
 
-    if dist < 10
+    if dist < 16
       pickup.active = false
       case pickup.pickup_type
       when :health
