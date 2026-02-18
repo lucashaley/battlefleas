@@ -17,7 +17,7 @@ class ShotgunProjectile < Projectile
   end
 
   def on_impact(args, hit_x, hit_y)
-    explode_at(args, hit_x, hit_y, @blast_radius, @damage)
+    explode_at(args, hit_x, hit_y, @blast_radius, @damage, @owner_index)
   end
 
   def spawn(flea)

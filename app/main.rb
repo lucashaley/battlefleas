@@ -44,8 +44,12 @@ end
 def perform_fire(args, flea, weapon = nil)
   weapon ||= flea.weapon
   projectile = Projectile.create(weapon)
+  projectile.owner_index = flea.index
   spawned = projectile.spawn(flea)
+  spawned.each { |p| p.owner_index = flea.index }
   args.state.game.projectiles.concat(spawned)
+
+  flea.stats.shots_fired += 1
 
   args.state.turn.action = :fire
   args.state.game.playstate = :review
@@ -519,12 +523,30 @@ def playing args
             args.state.mp.replay_data = nil
             args.state.mp.mp_state = :idle
             advance_turn(args)
+
+            # Check for game over in multiplayer
+            alive_fleas = args.state.game.fleas.values.select { |f| f.alive }
+            if alive_fleas.length <= 1
+              args.state.game.winner = alive_fleas.first
+              args.state.app.state = :gameover
+              return
+            end
+
             args.state.game.playstate = :interact
             focus_camera_on_flea(args, current_flea(args))
           end
         end
       else
         advance_turn(args)
+
+        # Check for game over: one or fewer fleas alive
+        alive_fleas = args.state.game.fleas.values.select { |f| f.alive }
+        if alive_fleas.length <= 1
+          args.state.game.winner = alive_fleas.first
+          args.state.app.state = :gameover
+          return
+        end
+
         args.state.game.playstate = :interact
         focus_camera_on_flea(args, current_flea(args))
       end
@@ -671,6 +693,88 @@ def playing args
   args.outputs.debug << "grounded: #{flea.is_grounded}"
 end
 
+def gameover args
+  # Return to setup on ENTER
+  if args.inputs.keyboard.key_down.enter
+    args.state.app.state = :setup
+    return
+  end
+
+  winner = args.state.game.winner
+
+  # Title
+  args.outputs.labels << {
+    x: 640, y: 620, text: "GAME OVER",
+    size_enum: 8, alignment_enum: 1,
+    r: 255, g: 255, b: 255, a: 255,
+    font: "fonts/coolfont.ttf"
+  }
+
+  # Winner announcement
+  if winner
+    args.outputs.labels << {
+      x: 640, y: 550, text: "#{winner.name} wins!",
+      size_enum: 4, alignment_enum: 1,
+      r: winner.color.r, g: winner.color.g, b: winner.color.b, a: 255
+    }
+  else
+    args.outputs.labels << {
+      x: 640, y: 550, text: "Draw!",
+      size_enum: 4, alignment_enum: 1,
+      r: 200, g: 200, b: 200, a: 255
+    }
+  end
+
+  # Total turns
+  args.outputs.labels << {
+    x: 640, y: 490, text: "Turns played: #{args.state.turn.number}",
+    size_enum: 1, alignment_enum: 1,
+    r: 200, g: 200, b: 200, a: 255
+  }
+
+  # Stats table header
+  header_y = 440
+  args.outputs.labels << { x: 240, y: header_y, text: "Player", size_enum: 0, alignment_enum: 0, r: 180, g: 180, b: 180, a: 255 }
+  args.outputs.labels << { x: 500, y: header_y, text: "Shots", size_enum: 0, alignment_enum: 1, r: 180, g: 180, b: 180, a: 255 }
+  args.outputs.labels << { x: 680, y: header_y, text: "Damage", size_enum: 0, alignment_enum: 1, r: 180, g: 180, b: 180, a: 255 }
+  args.outputs.labels << { x: 860, y: header_y, text: "Health", size_enum: 0, alignment_enum: 1, r: 180, g: 180, b: 180, a: 255 }
+
+  # Stats rows
+  args.state.game.fleas.each_value do |flea|
+    row_y = header_y - 35 - (flea.index * 35)
+    args.outputs.labels << {
+      x: 240, y: row_y, text: flea.name,
+      size_enum: 0, alignment_enum: 0,
+      r: flea.color.r, g: flea.color.g, b: flea.color.b, a: 255
+    }
+    args.outputs.labels << {
+      x: 500, y: row_y, text: flea.stats.shots_fired.to_s,
+      size_enum: 0, alignment_enum: 1,
+      r: 255, g: 255, b: 255, a: 255
+    }
+    args.outputs.labels << {
+      x: 680, y: row_y, text: flea.stats.damage_dealt.to_s,
+      size_enum: 0, alignment_enum: 1,
+      r: 255, g: 255, b: 255, a: 255
+    }
+    health_text = flea.alive ? flea.health.to_s : "Dead"
+    health_r = flea.alive ? 100 : 255
+    health_g = flea.alive ? 255 : 100
+    args.outputs.labels << {
+      x: 860, y: row_y, text: health_text,
+      size_enum: 0, alignment_enum: 1,
+      r: health_r, g: health_g, b: 100, a: 255
+    }
+  end
+
+  # Prompt
+  args.outputs.labels << {
+    x: 640, y: 80, text: "Press ENTER to return to menu",
+    size_enum: 0, alignment_enum: 1,
+    r: 150, g: 150, b: 150, a: 255
+  }
+end
+
 def calc_projectiles args
   projectiles = args.state.game.projectiles.select { |p| p.active && !p.is_grounded }
 
@@ -804,6 +908,7 @@ def tick args
   when :setup then setup args
   when :splash then splash args
   when :playing then playing args
+  when :gameover then gameover args
   else
     puts "\n\n*** BAD STATE ***\n\n"
   end
@@ -888,7 +993,7 @@ def check_pickup_collection(flea, args)
   end
 end
 
-def explode_at(args, cx, cy, radius, max_damage = 100)
+def explode_at(args, cx, cy, radius, max_damage = 100, owner_index = nil)
   segments = args.state.game.terrain_segments
   w = args.state.global.terrain.w
 
@@ -910,6 +1015,12 @@ def explode_at(args, cx, cy, radius, max_damage = 100)
     if dist < radius
       damage = ((1 - dist / radius) * max_damage).round
       flea.health -= damage
+
+      # Credit damage to the owning flea's stats
+      if owner_index && args.state.game.fleas[owner_index]
+        args.state.game.fleas[owner_index].stats.damage_dealt += damage
+      end
+
       if flea.health <= 0
         flea.health = 0
         flea.alive = false

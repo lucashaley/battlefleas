@@ -28,7 +28,8 @@ module Flea
       controller: :human,
       alive: true,
       health: 100,
-      weapon: :explosive
+      weapon: :explosive,
+      stats: { shots_fired: 0, damage_dealt: 0 }
     }
   end
 end

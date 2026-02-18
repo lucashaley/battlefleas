@@ -3,7 +3,8 @@ class Projectile < BattleSprite
 
   attr_accessor :active, :projectile_type, :w, :h, :x, :y, :screen_x,
                 :speed, :bounciness, :is_grounded, :grounded_start,
-                :blast_radius, :damage, :color, :type, :name, :next_x, :next_y
+                :blast_radius, :damage, :color, :type, :name, :next_x, :next_y,
+                :owner_index
 
   def initialize(args = nil)
     if args
@@ -28,6 +29,7 @@ class Projectile < BattleSprite
     @damage = 100
     @color = { r: 196, g: 16, b: 64 }
     @type = :solid
+    @owner_index = nil
   end
 
   # --- Overridable methods (subclasses override these) ---
